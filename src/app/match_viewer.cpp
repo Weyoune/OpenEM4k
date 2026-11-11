@@ -35,23 +35,14 @@ fs::path find_data(const char* given) {
     std::vector<fs::path> tries;
     if (given) tries.emplace_back(given);
     if (const char* env = std::getenv("OPENEM_DATA")) tries.emplace_back(env);
+    if (char* base = SDL_GetBasePath()) {  // next to the program
+        for (const char* rel : {"", "EM", "data"}) tries.push_back(fs::path(base) / rel);
+        SDL_free(base);
+    }
     for (const char* rel : {"EM", "data", ".", "../OpenEM/work/EM"}) tries.emplace_back(rel);
     for (const fs::path& p : tries)
-        if (fs::exists(p / "TORE")) return p;
+        if (!MatchScene::scripts(p).empty()) return p;
     return {};
-}
-
-std::vector<std::string> scripts(const fs::path& data) {
-    std::vector<std::string> out;
-    for (const auto& e : fs::directory_iterator(data / "TORE")) {
-        const std::string name = e.path().filename().string();
-        if (name != "anzahl" && name.find('.') != std::string::npos) out.push_back(name);
-    }
-    std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) {
-        const int na = std::atoi(a.c_str()), nb = std::atoi(b.c_str());
-        return na != nb ? na < nb : a < b;
-    });
-    return out;
 }
 
 void describe(MatchSceneInput& scene, const std::string& script) {
@@ -147,7 +138,7 @@ int main(int argc, char** argv) {
             return 0;
         }
 
-        std::vector<std::string> all = scripts(data);
+        std::vector<std::string> all = MatchScene::scripts(data);
         size_t current = size_t(std::find(all.begin(), all.end(), script) - all.begin());
         if (current >= all.size()) current = 0;
         if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());

@@ -1,0 +1,40 @@
+OpenEM4k - Spielszenen (Vorschau)
+=================================
+
+Zeigt die Torszenen von Eishockey Manager (Software 2000, 1993) als eigene, hochaufloesende 2D-Darstellung.
+Quelltext und Beschreibung: https://github.com/Weyoune/OpenEM4k
+
+Spieldaten
+----------
+Das Programm braucht den Ordner TORE aus einer vorhandenen Installation von Eishockey Manager. Er gehoert nicht
+zu diesem Paket. Am einfachsten: den Ordner TORE neben das Programm kopieren. Oder beim Start angeben:
+
+    em4k_match --data <Ordner, in dem TORE liegt>
+
+Start
+-----
+Windows:  em4k_match.exe doppelklicken oder in der Eingabeaufforderung starten.
+
+macOS:    Das Programm ist nicht signiert. Nach dem Entpacken einmal im Terminal die Sperre fuer
+          heruntergeladene Programme aufheben und starten:
+
+              cd <entpackter Ordner>
+              xattr -d com.apple.quarantine em4k_match
+              ./em4k_match
+
+          Laeuft auf Apple Silicon und Intel, ab macOS 11.
+
+Linux:    ./em4k_match  (x86-64; gebaut auf Ubuntu, braucht X11 oder Wayland)
+
+Tasten
+------
+Pfeil links / rechts   anderes Skript
+Leertaste              Pause
+, und .                einen Tick zurueck / vor
+I                      Glaettung und ruhige Kamera an / aus
+A                      Fuellgrad der Halle
++ und -                Tempo
+F oder F11             Vollbild
+Esc                    Ende
+
+Weitere Optionen: em4k_match --help

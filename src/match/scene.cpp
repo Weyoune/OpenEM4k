@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "match/scene.hpp"
 
+#include <cstdlib>
 #include <thread>
 
 #include "match/text.hpp"
@@ -262,6 +263,39 @@ SceneMoment SceneTrack::at(double tick, bool smooth) const {
     return m;
 }
 
+namespace {
+
+std::string lower(std::string s) {
+    for (char& c : s)
+        if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
+    return s;
+}
+// The entry of `dir` with this name, whatever its case (the game comes from DOS; other systems tell cases apart)
+std::filesystem::path entry(const std::filesystem::path& dir, const std::string& name) {
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec))
+        if (lower(it->path().filename().string()) == name) return it->path();
+    return {};
+}
+
+}  // namespace
+
+std::vector<std::string> MatchScene::scripts(const std::filesystem::path& data) {
+    std::vector<std::string> out;
+    const std::filesystem::path dir = entry(data.empty() ? std::filesystem::path(".") : data, "tore");
+    if (dir.empty()) return out;
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+        const std::string name = lower(it->path().filename().string());
+        if (name != "anzahl" && name.find('.') != std::string::npos && name[0] >= '0' && name[0] <= '9') out.push_back(name);
+    }
+    std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) {
+        const int na = std::atoi(a.c_str()), nb = std::atoi(b.c_str());
+        return na != nb ? na < nb : a < b;
+    });
+    return out;
+}
+
 MatchScene::MatchScene(const std::filesystem::path& data) : data_(data) {}
 
 const SceneTrack& MatchScene::track(const std::string& script) {
@@ -269,7 +303,9 @@ const SceneTrack& MatchScene::track(const std::string& script) {
     if (it == tracks_.end()) {
         const size_t dot = script.find('.');
         const bool away_attacks = dot != std::string::npos && dot + 1 < script.size() && script[dot + 1] == 'a';
-        it = tracks_.emplace(script, SceneTrack(decode_tor(read_bytes(data_ / "TORE" / script)), away_attacks ? 1 : 0)).first;
+        const std::filesystem::path file = entry(entry(data_.empty() ? std::filesystem::path(".") : data_, "tore"), lower(script));
+        if (file.empty()) throw std::runtime_error("no scene script " + script);
+        it = tracks_.emplace(script, SceneTrack(decode_tor(read_bytes(file)), away_attacks ? 1 : 0)).first;
     }
     return it->second;
 }

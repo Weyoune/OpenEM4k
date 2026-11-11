@@ -93,6 +93,9 @@ class MatchScene {
 public:
     explicit MatchScene(const std::filesystem::path& data);  // the directory with TORE\ in it
     int length(const std::string& script);                   // frames of TORE\<script>
+    // The scripts in data\TORE, lower case and in order; empty when there is no such folder. Names of the folder and
+    // of the files are matched without regard to case.
+    static std::vector<std::string> scripts(const std::filesystem::path& data);
     // Draws the scene `fraction` (0..1) of a tick after scene.frame.
     void render(Surface& out, const MatchSceneInput& scene, double fraction = 0, bool smooth = true);
     // The same from a script given directly (tests, tools)
