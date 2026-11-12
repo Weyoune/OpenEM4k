@@ -157,6 +157,16 @@ void made_up_scene() {
     require(bar.r < 90 && bar.g < 90, "bar at the bottom");
     hd.render(b, track, in, 0.5, false);
     require(a.pixels != b.pixels, "the ticks of the script look different from the smooth picture");
+    // the slant: figures get height, their place on the ice stays
+    for (double tilt : {0.0, 1.0}) {
+        in.tilt = tilt;
+        hd.render(b, track, in, 0.5, true);
+        require(a.pixels != b.pixels, "another slant is another picture");
+        Surface again(640, 360);
+        hd.render(again, track, in, 0.5, true);
+        require(again.pixels == b.pixels, "same picture twice at this slant");
+    }
+    in.tilt = 0.5;
     // the outcome: crowd, net, goal light and the scorer's name
     in.frame = 30, in.final = true, in.goals = {4, 2}, in.scorer = "BERGER";
     in.after = 0.1;

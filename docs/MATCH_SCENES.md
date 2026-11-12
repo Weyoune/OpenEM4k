@@ -4,7 +4,7 @@ Code: `src/match/`, Programm `em4k_match` (`src/app/match_viewer.cpp`), Test `te
 
 ## Was es ist
 
-Die Torszenen von Eishockey Manager als eigene 2D-Eishockey-Darstellung in Draufsicht, in beliebiger Auflösung und
+Die Torszenen von Eishockey Manager als eigene 2D-Eishockey-Darstellung in leicht schräger Ansicht, in beliebiger Auflösung und
 beliebigem Seitenverhältnis. Eis, Bande, Tribüne, Zuschauer, Tore, Spieler, Puck und Schrift sind eigene
 Vektorzeichnungen, die zur Laufzeit gerastert werden. Aus dem Original kommen nur
 
@@ -26,7 +26,8 @@ Vektorzeichnungen, die zur Laufzeit gerastert werden. Aus dem Original kommen nu
 
 Eingabe ist `MatchSceneInput`. Der obere Teil entspricht dem, was auch die Torszene des Originals bekommt (Skript,
 Füllgrad der Halle, Farben, Namen, Spielstand, Infotext, Minute, Bildnummer, angreifende Seite, Tor ja/nein,
-Schlussbild); dazu kommen `after` (Sekunden seit Ende des Skripts) und `scorer` (Name über dem Torschützen).
+Schlussbild); dazu kommen `after` (Sekunden seit Ende des Skripts), `scorer` (Name über dem Torschützen) und `tilt`
+(Neigung der Ansicht).
 
 ## Vom Skript zur Szene (`SceneTrack`)
 
@@ -54,6 +55,23 @@ Schlussbild); dazu kommen `after` (Sekunden seit Ende des Skripts) und `scorer` 
 Zwischen zwei Ticks (54,925 ms) werden Ort, Blickrichtung, Schritt, Kamera und Größe gemischt. `smooth = false` zeigt
 Ticks, Kamera und Größe des Skripts unverändert.
 
+## Schrägblick (`tilt`)
+
+Wie das Original zeichnet die Szene das Eis unverzerrt (Kreise bleiben rund) und stellt nur auf, was auf dem Eis
+steht: Ein Punkt in der Höhe h über dem Eis erscheint h × Neigung weiter oben im Bild. Die Bodenebene – Linien,
+Kamera, Skriptkoordinaten, Schatten, Spuren – hängt nicht von der Neigung ab; der Fußpunkt einer Figur liegt immer
+auf der Skriptposition.
+
+- Neigung 0 ist die reine Draufsicht, 1 etwa die Schräge der Originalsprites. Vorgabe 0,5.
+- **Figuren** sind ein kleines Skelett mit Höhen (Schlittschuhe 0, Knie, Hüfte, Hände, Schultern, Kopf). Der Rumpf
+  hat eine Seitenwand, der Helm ist eine Kugel: Visier und Gesicht zeigen sich umso mehr, je mehr die Figur zum
+  Betrachter schaut; von hinten sieht man die Rückennummer auf dem Rücken, sobald die Wand hoch genug ist. Schaut
+  die Figur weg, liegen Arme und Schläger hinter dem Rumpf, sonst davor.
+- **Tore** stehen: Pfosten, Latte, Netzdach, Rück- und Seitennetz.
+- **Zuschauer und Bankspieler**: Kopf über den Schultern, Gesicht je nach Blickrichtung.
+- Was auf dem Eis steht, wird von hinten nach vorn gezeichnet (Figuren nach ihrem Ort, das ferne Tor hinter, das
+  nahe Tor vor denen, die vor seiner Linie stehen).
+
 ## Nach dem Skript (`final`, `after`)
 
 Bei einem Tor: Die Zuschauer, die sich freuen, springen (Heimfans beim Heimtor, die meisten Neutralen mit ihnen; beim
@@ -63,7 +81,7 @@ ein zweiter Kachelsatz ohne Zuschauer benutzt und sie werden je Bild gezeichnet.
 
 ## Bildausschnitt
 
-Das 320×200-Fenster des Originals plus 18 Feldeinheiten oben und unten (für die flach liegenden Tore) bleibt über der
+Das 320×200-Fenster des Originals plus 18 Feldeinheiten oben und unten (Platz für die Tore hinter der Torlinie) bleibt über der
 Anzeigeleiste immer sichtbar. Maßstab = min(Breite / 320, (Höhe − Leiste) / 236). Breitere Bilder zeigen links und
 rechts mehr Halle (16:9 etwa 480 statt 320 Feldeinheiten), höhere mehr oben und unten. Der Ausschnitt verlässt die
 Halle (672×1152) nicht; ist das Bild breiter als die Halle, wird sie mittig gezeigt. Die Anzeigeleiste (12,5 % der
@@ -71,24 +89,25 @@ Höhe) liegt halb durchsichtig über dem Bild.
 
 ## Technik
 
-- Der Hintergrund wird in 256-Pixel-Kacheln im Maßstab des ungezoomten Bilds gerastert und zwischengespeichert,
-  fehlende Kacheln parallel. Ohne Zoom werden Kacheln kopiert, mit Zoom bilinear abgetastet (höchstens 7 %
+- Der Hintergrund wird in 256-Pixel-Kacheln gerastert und zwischengespeichert, fehlende Kacheln parallel – in zwei
+  Maßstäben: dem des ungezoomten Bilds und dem des ruhenden Zooms. Dort wird kopiert; nur während der Zoom gleitet,
+  wird aus den ungezoomten Kacheln bilinear abgetastet (höchstens 7 %
   Vergrößerung). Figuren, Tore, Puck, Effekte und Leiste werden je Bild in waagerechten Bändern gezeichnet, ein Thread
   je Band.
-- Gemessen ohne Fensterausgabe (`--bench`) auf einem Rechner mit vier Kernen, 1920×1080: rund 11 ms je Bild ohne Zoom,
-  rund 16 ms mit Zoom und im Jubel.
+- Gemessen ohne Fensterausgabe (`--bench`) auf einem Rechner mit vier Kernen, Neigung 0,5: rund 15 ms je Bild bei
+  1920×1080, rund 58 ms bei 3840×2160. Für 4K in 60 Bildern/s reicht das Software-Rastern so nicht.
 - Abhängigkeiten: C++20 und Threads; SDL2 nur im Fensterprogramm.
 
 ## Benutzen
 
 ```
 em4k_match [--data <EM-Ordner>] [--script 5.at] [--arena 0..4] [--home RGB] [--away RGB]
-           [--names <Heim> <Gast>] [--scorer <Name>] [--size BxH] [--fullscreen] [--ticks]
+           [--names <Heim> <Gast>] [--scorer <Name>] [--tilt 0..1] [--size BxH] [--fullscreen] [--ticks]
            [--shot bild.png [--frame n[.f]] [--after Sekunden]] [--bench]
 ```
 
 Tasten: ←/→ Skript, Leertaste Pause, `,` / `.` Tick zurück / vor, `I` Glättung und ruhige Kamera, `A` Füllgrad der
-Halle, `+` / `−` Tempo, `F` oder F11 Vollbild, Esc Ende.
+Halle, `T` / `G` Ansicht steiler / flacher, `+` / `−` Tempo, `F` oder F11 Vollbild, Esc Ende.
 
 ## Offen
 

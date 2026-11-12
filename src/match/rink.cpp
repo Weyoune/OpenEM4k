@@ -126,7 +126,7 @@ constexpr int kGridCells = kGridW * kGridH;
 int cell_of(double v, int n) { return std::clamp(int(std::floor(v / kGridCell)), 0, n - 1); }
 }  // namespace
 
-RinkArt::RinkArt(int level, Rgb home, Rgb away) : home_(home), away_(away) {
+RinkArt::RinkArt(int level, Rgb home, Rgb away, double tilt) : home_(home), away_(away), tilt_(tilt) {
     build_crowd(std::clamp(level, 0, 4));
     build_ice();
     ice_grid_.assign(kGridCells, {});
@@ -200,7 +200,7 @@ void RinkArt::draw_spectator(Painter& target, const Spectator& s, double jump) c
     const Rgb skin = shade(skins[hash32(seed, 3) % 4], dim);
     Rgb hair = shade(hairs[hash32(seed, 4) % 6], dim);
     const uint32_t extra = hash32(seed, 5) % 28;
-    const Vec body = c - f * 0.7, head = c + f * 0.5;
+    const Vec body = c - f * 0.7, head = c + f * 0.5 - Vec{0, 1.7 * tilt_};  // the head sits above the shoulders
     if (extra % 7 == 0 || jump > 0.05)  // arms up
         for (int k = -1; k <= 1; k += 2) {
             const Vec hand = body + side * (k * 3.6) + f * 3.4;
@@ -212,7 +212,9 @@ void RinkArt::draw_spectator(Painter& target, const Spectator& s, double jump) c
     else p.capsule(body - side * 1.9 - f * 0.5, body + side * 1.9 - f * 0.5, 0.7, 0.7, shade(shirt, 1.25), 0.6);
     if (extra == 1 || extra == 2) hair = skin;  // bald
     p.circle(head, 1.95, hair, 1, 0.38, ink);
-    p.shape(head.x - 2, head.y - 2, head.x + 2, head.y + 2, [=](Vec q) { return std::max(sd_circle(q, head, 1.8), 0.75 - dot(q - head, f)); }, skin);
+    const Vec look = normal(f + Vec{0, 0.9 * tilt_});  // the face shows more towards the viewer
+    const double cut = 0.75 - 1.3 * f.y * tilt_;
+    if (cut < 1.5) p.shape(head.x - 2, head.y - 2, head.x + 2, head.y + 2, [=](Vec q) { return std::max(sd_circle(q, head, 1.8), cut - dot(q - head, look)); }, skin);
     if (extra == 3 || extra == 4 || extra == 5) {  // cap with a peak
         const Rgb cap = shade(extra != 5 ? home_ : shirts[hash32(seed, 6) % 12], dim);
         p.capsule(head + f * 0.9, head + f * 2.3, 1.25, 1.0, shade(cap, 0.8), 1, 0.3, ink);
@@ -260,7 +262,7 @@ void RinkArt::paint_benches(Painter& p) const {
         p.capsule({61.5, y0}, {61.5, y0 + 112}, 1.6, 1.6, wood, 1, 0.4, ink);
         for (int i = 0; i < 7; i++) {
             const Vec c{66.5 + (hash01(uint32_t(i), uint32_t(k), 50) - 0.5) * 1.6, y0 + 8 + i * 16.0};
-            const Vec head = c + Vec{1.6, 0};
+            const Vec head = c + Vec{1.6, -2.0 * tilt_};
             p.box(c - Vec{1.7, 0}, 3.3, 5.6, 2.8, 0, shirt, 1, 0.45, ink);
             p.line(c + Vec{-3.2, -3.6}, c + Vec{-3.2, 3.6}, 0.8, helmet, 0.8);
             p.circle(head, 2.9, helmet, 1, 0.45, ink);
@@ -356,35 +358,78 @@ void paint_crease(Painter& p, double gy, double out) {
 
 }  // namespace
 
-void RinkArt::paint_goal(Painter& p, int goal, double bx, double bulge) {
+void RinkArt::paint_goal(Painter& p, int goal, double bx, double bulge, double tilt) {
     const double gy = goal ? kGoalLineNear : kGoalLineFar, out = goal ? 1 : -1;
+    const double lift = kGoalHeight * tilt, back_lift = kGoalHeight * 0.55 * tilt;
     const double reach = kGoalDepth + std::max(0.0, bulge);
     const double x0 = kMidX - kGoalHalf - 4, x1 = kMidX + kGoalHalf + 6;
-    const double y0 = std::min(gy, gy + out * reach) - 4, y1 = std::max(gy, gy + out * reach) + 6;
+    const double y0 = std::min(gy, gy + out * reach) - 4 - lift, y1 = std::max(gy, gy + out * reach) + 6;
     const double scale = p.scale;
+    const Rgb dark{120, 10, 0};
     const auto net = [=](Vec q) { return net_sd(q, gy, out, bx, bulge); };
-    p.shape(x0, y0, x1, y1, [=](Vec q) { return net(q - Vec{2.6, 3.4}) - 1; }, Rgb{16, 70, 120}, 0.28);  // shadow
-    p.shape(x0, y0, x1, y1, net, Rgb{240, 246, 250}, 0.6);
-    p.cover(x0, y0, x1, y1, Rgb{96, 122, 150}, [=](Vec q) {  // mesh, stretched where the net bulges
-        const double inside = clamp01(0.5 - net(q) * scale);
-        if (inside <= 0) return 0.0;
-        const double k = (q.x - bx) / 9, pull = bulge * std::exp(-k * k) * clamp01((q.y - gy) * out / kGoalDepth);
+    const auto mesh = [=](Vec q, double pull) {  // coverage of the threads at q
         const double y = q.y - out * pull;
         const double u = (q.x + y) / 3.4, v = (q.x - y) / 3.4;
         const double d = std::min(std::abs(u - std::round(u)), std::abs(v - std::round(v))) * 3.4 * 0.7071;
-        return inside * clamp01(0.5 - (d - 0.22) * scale) * 0.85;
-    });
-    // the top of the net: a lighter panel behind the crossbar
-    p.shape(x0, y0, x1, y1, [=](Vec q) { return std::max(std::abs(net(q) + 6.5) - 0.45, 0.4 - (q.y - gy) * out); }, Rgb{255, 255, 255}, 0.75);
-    // frame: base of the net and the crossbar over the goal line
-    p.shape(x0, y0, x1, y1, [=](Vec q) { return std::abs(net(q)) - 1.75; }, Rgb{120, 10, 0});
+        return clamp01(0.5 - (d - 0.22) * scale);
+    };
+    // on the ice: shadow, the floor of the net and its frame
+    p.shape(x0, y0, x1, y1, [=](Vec q) { return net(q - Vec{2.6, 3.4}) - 1; }, Rgb{16, 70, 120}, 0.28);
+    p.shape(x0, y0, x1, y1, net, Rgb{240, 246, 250}, tilt > 0.02 ? 0.35 : 0.6);
+    if (tilt <= 0.02) {  // straight from above: the net lies flat
+        p.cover(x0, y0, x1, y1, Rgb{96, 122, 150}, [=](Vec q) {
+            const double inside = clamp01(0.5 - net(q) * scale);
+            if (inside <= 0) return 0.0;
+            const double k = (q.x - bx) / 9;
+            return inside * mesh(q, bulge * std::exp(-k * k) * clamp01((q.y - gy) * out / kGoalDepth)) * 0.85;
+        });
+        p.shape(x0, y0, x1, y1, [=](Vec q) { return std::max(std::abs(net(q) + 6.5) - 0.45, 0.4 - (q.y - gy) * out); }, Rgb{255, 255, 255}, 0.75);
+    }
+    p.shape(x0, y0, x1, y1, [=](Vec q) { return std::abs(net(q)) - 1.75; }, dark);
     p.shape(x0, y0, x1, y1, [=](Vec q) { return std::abs(net(q)) - 1.15; }, kRed);
     p.shape(x0, y0, x1, y1, [=](Vec q) { return std::abs(net(q + Vec{0.35, 0.4})) - 0.3; }, Rgb{255, 150, 120}, 0.8);
-    for (int k = -1; k <= 1; k += 2) {
-        const Vec post{kMidX + k * kGoalHalf, gy};
-        p.circle(post, 2.3, kRed, 1, 0.6, Rgb{120, 10, 0});
-        p.circle(post - Vec{0.6, 0.7}, 0.8, Rgb{255, 170, 140}, 0.9);
+    if (tilt <= 0.02) {
+        for (int k = -1; k <= 1; k += 2) {
+            const Vec post{kMidX + k * kGoalHalf, gy};
+            p.circle(post, 2.3, kRed, 1, 0.6, dark);
+            p.circle(post - Vec{0.6, 0.7}, 0.8, Rgb{255, 170, 140}, 0.9);
+        }
+        return;
     }
+    // standing: posts up to the crossbar, the roof of the net sloping down to the back bar, back and side nets
+    const double push = bulge * 0.7;  // the back bar gives way with the net
+    const Vec base_l{kMidX - kGoalHalf, gy}, base_r{kMidX + kGoalHalf, gy};
+    const Vec top_l = base_l - Vec{0, lift}, top_r = base_r - Vec{0, lift};
+    const double back_y = gy + out * (kGoalDepth - 1 + push);
+    const Vec floor_l{kMidX - kGoalHalf + 7, back_y}, floor_r{kMidX + kGoalHalf - 7, back_y};
+    const Vec back_l = floor_l - Vec{0, back_lift}, back_r = floor_r - Vec{0, back_lift};
+    const auto panel = [&](Vec a, Vec b, Vec c, Vec d, Rgb cloth, double cloth_alpha, double thread_alpha) {
+        const Vec v[4] = {a, b, c, d};
+        const double px0 = std::min({a.x, b.x, c.x, d.x}) - 1, px1 = std::max({a.x, b.x, c.x, d.x}) + 1;  // only where the panel is
+        const double py0 = std::min({a.y, b.y, c.y, d.y}) - 1, py1 = std::max({a.y, b.y, c.y, d.y}) + 1;
+        const auto sd = [=](Vec q) { return sd_polygon(q, v); };
+        p.shape(px0, py0, px1, py1, sd, cloth, cloth_alpha);
+        p.cover(px0, py0, px1, py1, Rgb{96, 122, 150}, [=](Vec q) {
+            const double inside = clamp01(0.5 - sd(q) * scale);
+            return inside <= 0 ? 0.0 : inside * mesh(q, 0) * thread_alpha;
+        });
+    };
+    const auto tube = [&](Vec a, Vec b, double radius) {
+        p.capsule(a, b, radius, radius, kRed, 1, 0.55, dark);
+        p.line(a - Vec{0.3, 0.35}, b - Vec{0.3, 0.35}, radius * 0.5, Rgb{255, 150, 120}, 0.8);
+    };
+    const Rgb cloth{240, 246, 250};
+    panel(back_l, back_r, floor_r, floor_l, shade(cloth, 0.86), 0.5, 0.8);  // back
+    panel(base_l, top_l, back_l, floor_l, shade(cloth, 0.92), 0.4, 0.7);    // sides
+    panel(base_r, top_r, back_r, floor_r, shade(cloth, 0.92), 0.4, 0.7);
+    tube(base_l, top_l, 1.2);
+    tube(base_r, top_r, 1.2);
+    panel(top_l, top_r, back_r, back_l, cloth, 0.5, 0.85);  // roof
+    tube(top_l, back_l, 0.8);
+    tube(top_r, back_r, 0.8);
+    tube(back_l, back_r, 0.8);
+    tube(top_l, top_r, 1.3);  // crossbar
+    for (const Vec base : {base_l, base_r}) p.circle(base, 1.9, kRed, 1, 0.5, dark);
 }
 
 void RinkArt::paint(Painter& p, bool with_crowd) const {

@@ -36,6 +36,7 @@ struct MatchSceneInput {
     // additions of the new scenes
     double after = 0;                  // seconds since the script ended (the crowd celebrates, the net settles)
     std::string scorer;                // shown over the scorer after a goal; empty: nothing
+    double tilt = 0.5;                 // 0 straight from above .. 1 the slant of the original (see draw_player)
 };
 
 // Where the picture shows the rink: pixel = (rink - origin) * scale.
@@ -104,7 +105,7 @@ public:
 private:
     using Tiles = std::map<std::pair<int, int>, Surface>;
     const SceneTrack& track(const std::string& script);
-    void prepare(Tiles& tiles, bool with_crowd, long long x0, long long y0, int width, int height);
+    void prepare(Tiles& tiles, bool with_crowd, double scale, long long x0, long long y0, int width, int height);
     static void copy_tiles(const Tiles& tiles, Surface& out, long long x0, long long y0, int from, int to);
     void bar(Surface& out, const Viewport& view, const MatchSceneInput& scene);
 
@@ -112,9 +113,10 @@ private:
     std::map<std::string, SceneTrack> tracks_;
     std::unique_ptr<RinkArt> rink_;
     int rink_level_ = -1;
+    double rink_tilt_ = -1;
     std::array<int, 2> rink_colour_{-1, -1};
-    double tile_scale_ = 0;
-    Tiles tiles_[2];   // without / with the spectators
+    double tile_scale_ = 0, close_scale_ = 0;  // of the unzoomed picture / of the resting zoom
+    Tiles tiles_[4];   // at the two scales, each without / with the spectators
     Surface scratch_;  // the arena at tile scale under a zoomed picture
 };
 

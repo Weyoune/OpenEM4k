@@ -1,5 +1,8 @@
 Vorschau der Spielszenen: die Torszenen von Eishockey Manager als eigene, hochauflösende 2D-Darstellung.
 
+Neu in v0.2.0: leicht schräge Ansicht wie im Original – Spieler mit Höhe, Helme und Gesichter von der Seite, stehende
+Tore. Mit `T` / `G` lässt sich die Neigung verstellen (`--tilt 0..1`, Vorgabe 0,5).
+
 **Spieldaten sind nicht enthalten.** Das Programm braucht den Ordner `TORE` aus einer vorhandenen Installation von
 Eishockey Manager – neben das Programm kopieren oder mit `--data <Ordner>` angeben.
 

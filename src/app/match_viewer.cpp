@@ -2,12 +2,12 @@
 // em4k_match - viewer of the match scenes (docs/MATCH_SCENES.md).
 //
 //   em4k_match [--data <EM dir>] [--script 5.at] [--arena 0..4] [--home RGB] [--away RGB]
-//              [--names <home> <away>] [--scorer <name>] [--size WxH] [--fullscreen]
+//              [--names <home> <away>] [--scorer <name>] [--tilt 0..1] [--size WxH] [--fullscreen]
 //              [--shot out.png [--frame n[.f]] [--after seconds]]   one picture without a window
 //              [--bench]                                            time per picture without a window
 //
 // Keys: Left / Right script, Space pause, , / . one tick back / on, I smooth motion and camera on / off, A arena (how
-// full the stands are), + / - speed, F11 or F fullscreen, Esc quit.
+// full the stands are), T / G steeper / flatter view, + / - speed, F11 or F fullscreen, Esc quit.
 #include <SDL.h>
 
 #include <algorithm>
@@ -79,6 +79,7 @@ int main(int argc, char** argv) {
         else if (a == "--away") scene.colour[1] = int(std::strtol(next(), nullptr, 16));
         else if (a == "--names") scene.names[0] = next(), scene.names[1] = next();
         else if (a == "--scorer") scene.scorer = next();
+        else if (a == "--tilt") scene.tilt = std::atof(next());
         else if (a == "--size") std::sscanf(next(), "%dx%d", &width, &height);
         else if (a == "--fullscreen") fullscreen = true;
         else if (a == "--shot") shot = next();
@@ -173,6 +174,8 @@ int main(int argc, char** argv) {
                     case SDLK_COMMA: paused = true, after = 0, tick = std::max(0.0, std::ceil(tick) - 1); break;
                     case SDLK_i: smooth = !smooth; break;
                     case SDLK_a: scene.arena = (scene.arena + 1) % 5; break;
+                    case SDLK_t: scene.tilt = std::min(1.0, std::round(scene.tilt * 10 + 1) / 10); break;
+                    case SDLK_g: scene.tilt = std::max(0.0, std::round(scene.tilt * 10 - 1) / 10); break;
                     case SDLK_PLUS: case SDLK_KP_PLUS: case SDLK_EQUALS: speed = std::min(4.0, speed * 1.25); break;
                     case SDLK_MINUS: case SDLK_KP_MINUS: speed = std::max(0.1, speed / 1.25); break;
                     case SDLK_F11: case SDLK_f:
@@ -218,7 +221,7 @@ int main(int argc, char** argv) {
             if (now - title_at > SDL_GetPerformanceFrequency()) {
                 const double seconds = double(now - title_at) / double(SDL_GetPerformanceFrequency());
                 const std::string title = "OpenEM4k - match scene " + scene.script + "  " + std::to_string(out_w) + "x" + std::to_string(out_h) + "  " +
-                                          std::to_string(int(frames_drawn / seconds + 0.5)) + " fps" + (smooth ? "" : "  [ticks]");
+                                          std::to_string(int(frames_drawn / seconds + 0.5)) + " fps  tilt " + std::to_string(int(scene.tilt * 10 + 0.5)) + "/10" + (smooth ? "" : "  [ticks]");
                 SDL_SetWindowTitle(window, title.c_str());
                 title_at = now, frames_drawn = 0;
             }

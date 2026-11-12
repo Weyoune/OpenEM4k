@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
-// Skaters, goalies and the puck of the new match scenes: own vector figures seen from above. A figure is drawn from
-// a state (place, heading, stride, action), not from pictures, so it can turn freely and move smoothly; the scene
-// player (scene.hpp) derives these states from the original scripts.
+// Skaters, goalies and the puck of the match scenes: own vector figures seen from above at a slant. A figure is
+// drawn from a state (place, heading, stride, action), not from pictures, so it can turn freely and move smoothly;
+// the scene player (scene.hpp) derives these states from the original scripts.
 #include "match/raster.hpp"
 
 namespace em4k {
@@ -27,7 +27,11 @@ struct PlayerState {
     Vec puck;
 };
 
-void draw_player(Painter& p, const PlayerState& s, const TeamColours& team);
+// tilt 0..1: how much the figure is seen from the side (0 straight from above, 1 about as in the original); the place
+// on the ice does not depend on it.
+void draw_player(Painter& p, const PlayerState& s, const TeamColours& team, double tilt);
+// How far the top of a figure is above its place on the ice, in rink units (to be multiplied by the tilt).
+double player_height(bool goalie);
 // ground: where the puck is over the ice (its shadow), body: where it is seen (lifted pucks are drawn off the shadow);
 // velocity in rink units per script tick, for the streak behind a fast puck
 void draw_puck(Painter& p, Vec ground, Vec body, Vec velocity);

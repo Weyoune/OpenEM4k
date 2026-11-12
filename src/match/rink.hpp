@@ -12,13 +12,14 @@ namespace em4k {
 constexpr double kRinkWidth = 672, kRinkHeight = 1152;
 constexpr double kRinkMidX = 335.75, kRinkMidY = 575.75;
 constexpr double kGoalLineFar = 128.5, kGoalLineNear = 1023;  // y of the two goal lines
-constexpr double kGoalHalfWidth = 25, kGoalDepth = 22;
+constexpr double kGoalHalfWidth = 25, kGoalDepth = 22, kGoalHeight = 15;
 
 class RinkArt {
 public:
     // level 0..4: how full the stands are (the arena argument of the original scene). home / away: shirt colours, for
     // the supporters, the logo at centre ice and the players on the benches.
-    RinkArt(int level, Rgb home, Rgb away);
+    // tilt 0..1: how much things that stand are seen from the side (see draw_player)
+    RinkArt(int level, Rgb home, Rgb away, double tilt);
 
     // The arena without the goals, as far as the painter's target shows it. with_crowd = false leaves the spectators
     // out; paint_crowd then draws them moving.
@@ -26,7 +27,7 @@ public:
     // The spectators after a goal: those who are happy about it jump. time: seconds since the goal.
     void paint_crowd(Painter& p, double time, bool home_scored) const;
     // goal 0 = far, 1 = near. bulge: how far the puck pushes the back of the net out at bulge_x (rink units).
-    static void paint_goal(Painter& p, int goal, double bulge_x = kRinkMidX, double bulge = 0);
+    static void paint_goal(Painter& p, int goal, double bulge_x, double bulge, double tilt);
 
     int spectators() const { return int(crowd_.size()); }
 
@@ -56,6 +57,7 @@ private:
     std::vector<Spectator> crowd_;
     std::vector<std::vector<uint32_t>> crowd_grid_;
     Rgb home_, away_;
+    double tilt_ = 0;
 };
 
 }  // namespace em4k

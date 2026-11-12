@@ -25,6 +25,8 @@ add_library(em4k_match STATIC
     src/match/tor_script.cpp)
 target_include_directories(em4k_match PUBLIC src)
 target_link_libraries(em4k_match PUBLIC Threads::Threads)
+# not em4k_match.lib: the program em4k_match would write its own files of that name next to it
+set_target_properties(em4k_match PROPERTIES OUTPUT_NAME em4k_match_core)
 
 # SDL2 for the window: the pinned release fetched at configure time, or an installed one
 option(EM4K_BUILD_APPS "Build the programs with a window (needs SDL2)" ON)

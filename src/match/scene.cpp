@@ -12,6 +12,7 @@ namespace {
 constexpr double kPi = 3.14159265358979;
 constexpr double kTickSeconds = 0.054925;  // one BIOS tick per script frame
 constexpr int kTile = 256;
+constexpr double kZoom = 1.07;  // how much closer the picture comes near the goal
 
 // What the 40 skater sprites of the original show: the way the figure faces - Up the rink, Down, Left, Right - and
 // whether it swings or lifts the stick (sprites 21..29, 36, 37). The 12 goalie sprites face up (0..5, the goalie of the
@@ -58,6 +59,16 @@ void in_bands(int height, F f) {
 
 }  // namespace
 
+namespace {
+// Puts the view on whole pixels (the arena can then be copied) without leaving the arena.
+void snap_to_pixels(Viewport& v, int width, int height) {
+    const double vw = width / v.scale, vh = height / v.scale;
+    v.origin = {std::round(v.origin.x * v.scale) / v.scale, std::round(v.origin.y * v.scale) / v.scale};
+    if (vw < kRinkWidth) v.origin.x = std::min(v.origin.x, std::floor((kRinkWidth - vw) * v.scale) / v.scale);
+    if (vh < kRinkHeight) v.origin.y = std::min(v.origin.y, std::floor((kRinkHeight - vh) * v.scale) / v.scale);
+}
+}  // namespace
+
 Viewport scene_viewport(int width, int height, Vec camera, double zoom) {
     Viewport v;
     v.bar = int(height * 0.125 + 0.5);
@@ -70,11 +81,7 @@ Viewport scene_viewport(int width, int height, Vec camera, double zoom) {
     v.origin = {camera.x + kTorViewWidth / 2.0 - vw / 2, camera.y + kTorViewHeight / 2.0 - above / 2};
     v.origin.x = vw >= kRinkWidth ? (kRinkWidth - vw) / 2 : std::clamp(v.origin.x, 0.0, kRinkWidth - vw);
     v.origin.y = vh >= kRinkHeight ? (kRinkHeight - vh) / 2 : std::clamp(v.origin.y, 0.0, kRinkHeight - vh);
-    if (z == 1) {  // whole pixels: the arena is copied, not resampled
-        v.origin = {std::round(v.origin.x * v.scale) / v.scale, std::round(v.origin.y * v.scale) / v.scale};
-        if (vw < kRinkWidth) v.origin.x = std::min(v.origin.x, std::floor((kRinkWidth - vw) * v.scale) / v.scale);
-        if (vh < kRinkHeight) v.origin.y = std::min(v.origin.y, std::floor((kRinkHeight - vh) * v.scale) / v.scale);
-    }
+    if (z == 1) snap_to_pixels(v, width, height);  // the arena is copied, not resampled
     return v;
 }
 
@@ -107,7 +114,7 @@ SceneTrack::SceneTrack(const TorScene& script, int attacking) {
             if (std::abs(k) <= 6) sum = sum + script_camera_[size_t(i)] * w, weight += w;
             const SceneMoment& m = moments_[size_t(i)];
             const double to_goal = std::min(length(m.puck - Vec{kRinkMidX, kGoalLineFar}), length(m.puck - Vec{kRinkMidX, kGoalLineNear}));
-            zoom += wz * ((to_goal < 85 || length(m.puck_velocity) > 4.5) ? 1.07 : 1.0), zoom_weight += wz;
+            zoom += wz * ((to_goal < 85 || length(m.puck_velocity) > 4.5) ? kZoom : 1.0), zoom_weight += wz;
         }
         moments_[size_t(n)].camera = sum * (1 / weight);
         moments_[size_t(n)].zoom = zoom / zoom_weight;
@@ -313,13 +320,12 @@ const SceneTrack& MatchScene::track(const std::string& script) {
 int MatchScene::length(const std::string& script) { return track(script).ticks(); }
 
 // Paints the tiles of the arena under the pixel rectangle (at tile scale) that are not there yet, several at a time.
-void MatchScene::prepare(Tiles& tiles, bool with_crowd, long long x0, long long y0, int width, int height) {
+void MatchScene::prepare(Tiles& tiles, bool with_crowd, double scale, long long x0, long long y0, int width, int height) {
     std::vector<std::pair<std::pair<int, int>, Surface*>> missing;
     for (int ty = tile_of(y0); ty <= tile_of(y0 + height - 1); ty++)
         for (int tx = tile_of(x0); tx <= tile_of(x0 + width - 1); tx++)
             if (!tiles.count({tx, ty})) missing.push_back({{tx, ty}, &tiles.emplace(std::pair{tx, ty}, Surface(kTile, kTile)).first->second});
     if (missing.empty()) return;
-    const double scale = tile_scale_;
     const auto work = [&](size_t first, size_t step) {
         for (size_t i = first; i < missing.size(); i += step) {
             Painter p{*missing[i].second, scale, {missing[i].first.first * kTile / scale, missing[i].first.second * kTile / scale}};
@@ -388,27 +394,42 @@ void MatchScene::render(Surface& out, const SceneTrack& tr, const MatchSceneInpu
     if (out.width <= 0 || out.height <= 0) return;
     const int level = scene.arena >= 1 && scene.arena <= 4 ? scene.arena : 0;
     const TeamColours teams[2] = {team_colours(scene.colour[0]), team_colours(scene.colour[1])};
-    if (!rink_ || level != rink_level_ || scene.colour != rink_colour_) {
-        rink_ = std::make_unique<RinkArt>(level, teams[0].shirt, teams[1].shirt);
-        rink_level_ = level, rink_colour_ = scene.colour;
-        tiles_[0].clear(), tiles_[1].clear();
+    const double tilt = std::clamp(scene.tilt, 0.0, 1.0);
+    if (!rink_ || level != rink_level_ || scene.colour != rink_colour_ || tilt != rink_tilt_) {
+        rink_ = std::make_unique<RinkArt>(level, teams[0].shirt, teams[1].shirt, tilt);
+        rink_level_ = level, rink_colour_ = scene.colour, rink_tilt_ = tilt;
+        for (Tiles& t : tiles_) t.clear();
     }
     const bool playing = tr.ticks() >= 0;
     const double now = scene.frame + (smooth ? fraction : 0);
     const SceneMoment m = playing ? tr.at(scene.frame + fraction, smooth) : SceneMoment{};
-    const Viewport view = scene_viewport(out.width, out.height, m.camera, m.zoom);
     const bool celebrate = playing && scene.final && scene.goal;
+    // The zoom rests at its far end for most of a scene; in between it glides.
+    const bool rests = std::abs(m.zoom - kZoom) < 1e-6;
+    Viewport view = scene_viewport(out.width, out.height, m.camera, rests ? kZoom : m.zoom);
 
-    // The arena lies in tiles at the scale of the unzoomed picture; a zoomed picture is resampled from them.
+    // The arena lies in tiles at two scales: that of the unzoomed picture and that of the resting zoom. At these the
+    // picture is copied from the tiles; while the zoom glides it is resampled from the unzoomed ones.
     const double base = base_scale(out.width, out.height, view.bar);
-    if (tile_scale_ != base || tiles_[0].size() + tiles_[1].size() > 700) tiles_[0].clear(), tiles_[1].clear(), tile_scale_ = base;
-    Tiles& tiles = tiles_[celebrate ? 0 : 1];
-    const bool copied = view.scale == base;
-    const long long x0 = copied ? std::llround(view.origin.x * base) : (long long)std::floor(view.origin.x * base) - 1;
-    const long long y0 = copied ? std::llround(view.origin.y * base) : (long long)std::floor(view.origin.y * base) - 1;
+    size_t stored = 0;
+    for (const Tiles& t : tiles_) stored += t.size();
+    if (tile_scale_ != base || stored > 900) {
+        for (Tiles& t : tiles_) t.clear();
+        tile_scale_ = base, close_scale_ = 0;
+    }
+    const bool close = rests && view.scale != base;
+    if (close) {
+        if (close_scale_ != view.scale) tiles_[2].clear(), tiles_[3].clear(), close_scale_ = view.scale;
+        snap_to_pixels(view, out.width, out.height);
+    }
+    const double source_scale = close ? view.scale : base;
+    Tiles& tiles = tiles_[(close ? 2 : 0) + (celebrate ? 0 : 1)];
+    const bool copied = view.scale == source_scale;
+    const long long x0 = copied ? std::llround(view.origin.x * source_scale) : (long long)std::floor(view.origin.x * base) - 1;
+    const long long y0 = copied ? std::llround(view.origin.y * source_scale) : (long long)std::floor(view.origin.y * base) - 1;
     const int source_w = copied ? out.width : int(std::ceil(out.width / view.scale * base)) + 3;
     const int source_h = copied ? out.height : int(std::ceil(out.height / view.scale * base)) + 3;
-    prepare(tiles, !celebrate, x0, y0, source_w, source_h);
+    prepare(tiles, !celebrate, source_scale, x0, y0, source_w, source_h);
     if (!copied) {
         if (scratch_.width != out.width + 3 || scratch_.height != out.height + 3) scratch_ = Surface(out.width + 3, out.height + 3);  // never smaller than the source
         in_bands(source_h, [&](int from, int to) { copy_tiles(tiles, scratch_, x0, y0, from, to); });
@@ -447,10 +468,17 @@ void MatchScene::render(Surface& out, const SceneTrack& tr, const MatchSceneInpu
     Vec label_at;
     bool label = false;
     if (celebrate && !scene.scorer.empty() && tr.scorer() >= 0 && m.objects[size_t(tr.scorer())].kind == SceneObject::Kind::Skater) {
-        label_at = (m.objects[size_t(tr.scorer())].state.pos - Vec{0, 17} - view.origin) * view.scale;
+        const PlayerState& who = m.objects[size_t(tr.scorer())].state;
+        label_at = (who.pos - Vec{0, player_height(who.goalie) * tilt + 8} - view.origin) * view.scale;
         label = true;
     }
 
+    // What stands on the ice is drawn from the back to the front: the skaters by their place, the far goal behind
+    // whoever is in front of its line, the near goal in front of whoever is before its line.
+    std::vector<std::pair<double, int>> order{{kGoalLineFar - 1, 100}, {kGoalLineNear, 101}};
+    for (size_t o = 0; o < kTorObjects; o++)
+        if (m.objects[o].kind == SceneObject::Kind::Skater) order.push_back({m.objects[o].state.pos.y, int(o)});
+    std::sort(order.begin(), order.end());
     std::vector<uint32_t> columns;  // per picture column: source column * 256 + weight of the next one
     if (!copied) {
         columns.resize(size_t(out.width));
@@ -493,7 +521,8 @@ void MatchScene::render(Surface& out, const SceneTrack& tr, const MatchSceneInpu
         };
         Painter p{out, view.scale, view.origin, top, bottom};
         if (celebrate) rink_->paint_crowd(p, scene.after, scene.side == 0);
-        for (int g = 0; g < 2; g++) RinkArt::paint_goal(p, g, m.puck.x, netted && tr.net_goal() == g ? bulge : 0);
+        const auto goal = [&](int g) { RinkArt::paint_goal(p, g, m.puck.x, netted && tr.net_goal() == g ? bulge : 0, tilt); };
+        if (!playing) goal(0), goal(1);
         if (!playing) return panel();
         for (const Trace& t : traces) p.line(t.a, t.b, 0.5, Rgb{255, 255, 255}, t.alpha);
         for (const SceneSpray& s : tr.sprays()) {  // ice thrown up by a braking skater
@@ -512,16 +541,17 @@ void MatchScene::render(Surface& out, const SceneTrack& tr, const MatchSceneInpu
             p.soft(at, 46, 30, Rgb{255, 40, 20}, 0.8 * pulse);
             p.circle(at, 3.4, Rgb{255, 230, 200}, 1, 0.8, Rgb{200, 20, 0});
         }
-        for (int pass = 0; pass < 2; pass++)  // goalies below the skaters
-            for (const SceneObject& o : m.objects)
-                if (o.kind == SceneObject::Kind::Skater && o.state.goalie == (pass == 0)) draw_player(p, o.state, teams[o.team & 1]);
+        for (const auto& [depth, id] : order) {  // from the back to the front
+            if (id >= 100) goal(id - 100);
+            else draw_player(p, m.objects[size_t(id)].state, teams[m.objects[size_t(id)].team & 1], tilt);
+        }
         // The script's puck is its place on the ice (the original draws it in the colour of the shadows); object type 0, the
         // grey dot, is the puck itself, apart from the shadow while it flies.
         Vec body = m.puck;
         double nearest = 90;
         for (const SceneObject& o : m.objects)
             if (o.kind == SceneObject::Kind::Dot && em4k::length(o.state.pos - m.puck) < nearest) nearest = em4k::length(o.state.pos - m.puck), body = o.state.pos;
-        draw_puck(p, m.puck, body, m.puck_velocity);
+        draw_puck(p, m.puck, m.puck + (body - m.puck) * (0.4 + 0.6 * tilt), m.puck_velocity);
         if (label) {
             Painter flat{out, 1, {0, 0}, top, bottom};
             const double cap = std::max(9.0, out.height * 0.02), pop = clamp01(scene.after / 0.18), width = text_width(scene.scorer, cap);

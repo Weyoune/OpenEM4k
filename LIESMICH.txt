@@ -33,6 +33,7 @@ Leertaste              Pause
 , und .                einen Tick zurueck / vor
 I                      Glaettung und ruhige Kamera an / aus
 A                      Fuellgrad der Halle
+T und G                Ansicht steiler / flacher (0 = von oben, 10 = so schraeg wie das Original)
 + und -                Tempo
 F oder F11             Vollbild
 Esc                    Ende
